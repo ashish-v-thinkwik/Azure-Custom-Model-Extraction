@@ -6,9 +6,9 @@ import time
 import re
 
 # Azure credentials and settings
-endpoint = "https://sample-demo.cognitiveservices.azure.com/"
-key = "Ch6OxodAkReCwEUp1ZTGzurNyOwkKIJGEzD9ChRvXAC5XrxOy17QJQQJ99BBACYeBjFXJ3w3AAALACOG1PXC"
-model_id = "testing2"
+endpoint = ""
+key = ""
+model_id = ""
 
 # Initialize Azure Document Intelligence Client
 document_intelligence_client = DocumentIntelligenceClient(endpoint=endpoint, credential=AzureKeyCredential(key))
