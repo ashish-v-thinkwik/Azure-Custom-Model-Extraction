@@ -5,14 +5,14 @@ import pandas as pd
 import time
 import re
 import os
-
 from dotenv import load_dotenv
 
 load_dotenv()
 
 key = os.getenv("key")
 endpoint = os.getenv("endpoint")
-model_id= os.getenv("model_id")
+model_id = os.getenv("model_id")
+
 # Initialize Azure Document Intelligence Client
 document_intelligence_client = DocumentIntelligenceClient(endpoint=endpoint, credential=AzureKeyCredential(key))
 
@@ -25,10 +25,44 @@ st.set_page_config(
 
 st.title("📄 Loot Intelligence")
 
+# Custom CSS for styling
+st.markdown("""
+    <style>
+    .stProgress > div > div > div > div {
+        background-color: #4CAF50;
+    }
+    .metric-box {
+        padding: 10px; 
+        border-radius: 10px; 
+        text-align: center; 
+        background-color: #f3f3f3; 
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
+        margin-bottom: 10px;
+    }
+    .metric-title {
+        font-size: 18px;
+        margin-bottom: 5px;
+    }
+    .metric-value {
+        font-size: 24px;
+        color: #4CAF50;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# Function to display metric cards
+def metric_card(title, value, icon):
+    st.markdown(f"""
+    <div class="metric-box">
+        <h4 class="metric-title">{icon} {title}</h4>
+        <h2 class="metric-value">{value}</h2>
+    </div>
+    """, unsafe_allow_html=True)
+
+# Function to extract balance data from response
 def extract_balance_data(result):
-    """Extracts Daily Ending Balance table from Azure Document Intelligence response."""
     extracted_data = {}
-    
+
     for key, value in result.documents[0].fields.items():
         if value.type == "array":
             item_list = []
@@ -47,11 +81,11 @@ def extract_balance_data(result):
         else:
             formatted_key = key.replace("_", " ").title()
             extracted_data[formatted_key] = value.value_string if value.value_string else "N/A"
-    
+
     return extracted_data
 
+# Function to calculate financial metrics
 def calculate_metrics(balance_df):
-    """Calculates Average Daily Balance, Total Negative Days, and Average Negative Days."""
     amount_columns = [col for col in balance_df.columns if re.match(r"Amount(_\d+)?", col, re.IGNORECASE)]
     date_columns = [col for col in balance_df.columns if re.match(r"Date(_\d+)?", col, re.IGNORECASE)]
     
@@ -74,16 +108,17 @@ def calculate_metrics(balance_df):
 
     return avg_daily_balance, total_negative_days, avg_negative_days
 
+# Function to process uploaded PDFs
 def process_uploaded_files(uploaded_files):
-    """Processes uploaded PDFs and extracts financial metrics."""
     all_extracted_data = {}
 
     with st.spinner("Processing documents..."):
         progress_bar = st.progress(0)
+        status_placeholder = st.empty()
         total_files = len(uploaded_files)
 
         for i, uploaded_file in enumerate(uploaded_files):
-            st.markdown(f"### Processing: {uploaded_file.name}")
+            status_placeholder.text(f"Processing: {uploaded_file.name} ...")
             
             poller = document_intelligence_client.begin_analyze_document(
                 model_id=model_id, body=uploaded_file, content_type="application/pdf"
@@ -105,41 +140,51 @@ def process_uploaded_files(uploaded_files):
             progress_bar.progress((i + 1) / total_files)
             time.sleep(0.5)
 
+        status_placeholder.text("✅ All files processed successfully!")
+
     return all_extracted_data
 
+# Function to display extracted metrics
 def display_results(all_extracted_data):
-    """Displays extracted financial metrics in Streamlit without tables."""
     for file_name, file_data in all_extracted_data.items():
         st.markdown(f"## 🔹 {file_name}")
-        
-        # Display extracted metrics
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric("Average Daily Balance", f"${file_data.get('Average Daily Balance', 'N/A')}")
-        with col2:
-            st.metric("Total Negative Days", file_data.get('Total Negative Days', 'N/A'))
-        with col3:
-            st.metric("Average Negative Days", file_data.get('Average Negative Days', 'N/A'))
 
-        # Display extracted textual fields (but no tables)
-        for field_name, data in file_data.items():
-            if not isinstance(data, pd.DataFrame) and field_name not in ['Average Daily Balance', 'Total Negative Days', 'Average Negative Days']:
-                st.markdown(f"**{field_name}:** {data}")
-        
-        st.markdown("---")  # Add a separator between files
+        tab1, tab2 = st.tabs(["📊 Summary", "📜 Raw Extracted Data"])
+
+        with tab1:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                metric_card("Avg. Daily Balance", f"${file_data.get('Average Daily Balance', 'N/A')}", "💰")
+            with col2:
+                metric_card("Total Negative Days", file_data.get('Total Negative Days', 'N/A'), "📉")
+            with col3:
+                metric_card("Avg. Negative Days", file_data.get('Average Negative Days', 'N/A'), "📊")
+
+            st.divider()
+            col1, col2 = st.columns(2)
+            with col1:
+                if "No.Of.Depositsandadditions" in file_data:
+                    metric_card("No. of Deposits and Additions", file_data.get("No.Of.Depositsandadditions", "N/A"), "📥")
+            with col2:
+                if "Totalamountofdeposits" in file_data:
+                    metric_card("Total Amount of Deposits", file_data.get("Totalamountofdeposits", "N/A"), "💵")
+
+        with tab2:
+            st.dataframe(file_data.get("Daily Ending Balance", pd.DataFrame()), use_container_width=True)
+
+        st.divider()
 
 # File upload section
 st.markdown("### 📤 Upload Bank Statements")
-uploaded_files = st.file_uploader(
-    "Choose PDF files",
-    type=["pdf"],
-    accept_multiple_files=True,
-    help="Select multiple PDF files to process them in batch"
-)
+with st.container():
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        uploaded_files = st.file_uploader("Choose PDF files", type=["pdf"], accept_multiple_files=True)
+    with col2:
+        if uploaded_files:
+            st.success(f"✅ {len(uploaded_files)} file(s) uploaded!")
 
 if uploaded_files:
-    st.success(f"✅ {len(uploaded_files)} file(s) uploaded successfully!")
     all_extracted_data = process_uploaded_files(uploaded_files)
     display_results(all_extracted_data)
 else:
